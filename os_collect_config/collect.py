@@ -23,6 +23,7 @@ import sys
 import time
 
 from oslo_config import cfg
+from oslo_config import types
 
 from os_collect_config import cache
 from os_collect_config import cfn
@@ -52,9 +53,11 @@ opts = [
     cfg.StrOpt('backup-cachedir',
                default='/var/run/os-collect-config',
                help='Copy cache contents to this directory as well.'),
-    cfg.MultiStrOpt(
+    cfg.ListOpt(
         'collectors',
         positional=True,
+        bounds=True,
+        item_type=types.String(quotes=True),
         default=DEFAULT_COLLECTORS,
         help='List the collectors to use. When command is specified the'
              'collections will be emitted in the order given by this option.'
@@ -145,7 +148,6 @@ def setup_conf():
 
     CONF.register_cli_opts(opts)
 
-
 def collect_all(collectors, store=False, collector_kwargs_map=None):
     changed_keys = set()
     all_keys = list()
@@ -227,8 +229,18 @@ def getfilehash(files):
 def __main__(args=sys.argv, collector_kwargs_map=None):
     signal.signal(signal.SIGHUP, reexec_self)
     setup_conf()
-    CONF(args=args[1:], prog="os-collect-config",
+
+    # In order to fix bug #304687, the collectors option was converted
+    # from a MultiStrOpt to a ListOpt.  To maintain backwards
+    # compatibility in the CLI, allow collectors to be passed from the
+    # CLI as if it were a MultiStrOpt with multiple positional
+    # parameters, eg:
+    #  $ os-collect-config local ec2 request
+    # ...rather than a ListOpt, eg:
+    #  $ os-collect-config '[local, ec2, request]'
+    CONF(args=[], prog="os-collect-config",
          version=version.version_info.version_string())
+    CONF.set_override('collectors', args[1:])
 
     # This resets the logging infrastructure which prevents capturing log
     # output in tests cleanly, so should only be called if there isn't already
